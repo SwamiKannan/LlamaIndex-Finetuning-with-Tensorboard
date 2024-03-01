@@ -1,8 +1,10 @@
 from torch.utils.tensorboard import SummaryWriter
 from sentence_transformers.SentenceTransformer import SentenceTransformer, SentenceEvaluator
+from llama_index.core.evaluation import EmbeddingQAFinetuneDataset
+from llama_index.finetuning import SentenceTransformersFinetuneEngine
 from sentence_transformers.util import fullname, batch_to_device
 from sentence_transformers.SentenceTransformer import ModelCardTemplate
-from typing import Dict, Tuple, Iterable, Type, Union, Callable, Optional
+from typing import Dict, Tuple, Iterable, Type, Union, Callable, Optional, Any
 from torch import nn
 from torch.optim import Optimizer
 from torch.utils.data import DataLoader
@@ -43,7 +45,7 @@ class TBSentenceTransformer(SentenceTransformer):
             save_best_model: bool = True,
             max_grad_norm: float = 1,
             use_amp: bool = False,
-            tensorboard_params: Dict[str, object] = {'log': True, 'steps': 0, 'loss': True, 'lr': False,
+            tensorboard_params: Dict[str, object] = {'steps': 1, 'loss': True, 'lr': False,
                                                      'grad_hist': False, },
             callback: Callable[[float, int, int], None] = None,
             show_progress_bar: bool = True,
@@ -89,20 +91,17 @@ class TBSentenceTransformer(SentenceTransformer):
         self._model_card_text = None
         self._model_card_vars['{TRAINING_SECTION}'] = ModelCardTemplate.__TRAINING_SECTION__.replace("{LOSS_FUNCTIONS}", info_loss_functions).replace("{FIT_PARAMETERS}", info_fit_parameters)
 
-        if tensorboard_params['log']:
-            logs_writer = SummaryWriter(os.path.join(output_path, 'logs', 'train'))
-
         if use_amp:
             from torch.cuda.amp import autocast
             scaler = torch.cuda.amp.GradScaler()
-        self.to(self._target_device)
+        self.to(self.device)
         dataloaders = [dataloader for dataloader, _ in train_objectives]
         # Use smart batching
         for dataloader in dataloaders:
             dataloader.collate_fn = self.smart_batching_collate
         loss_models = [loss for _, loss in train_objectives]
         for loss_model in loss_models:
-            loss_model.to(self._target_device)
+            loss_model.to(self.device)
         self.best_score = -9999999
         if steps_per_epoch is None or steps_per_epoch == 0:
             steps_per_epoch = min([len(dataloader) for dataloader in dataloaders])
@@ -148,8 +147,8 @@ class TBSentenceTransformer(SentenceTransformer):
                         data_iterators[train_idx] = data_iterator
                         data = next(data_iterator)
                     features, labels = data
-                    labels = labels.to(self._target_device)
-                    features = list(map(lambda batch: batch_to_device(batch, self._target_device), features))
+                    labels = labels.to(self.device)
+                    features = list(map(lambda batch: batch_to_device(batch, self.device), features))
                     if use_amp:
                         with autocast():
                             loss_value = loss_model(features, labels)
@@ -165,15 +164,15 @@ class TBSentenceTransformer(SentenceTransformer):
                         loss_value.backward()
                         running_loss += loss_value.item()
 
-                        if tensorboard_params['log'] and tensorboard_params['steps'] > 0 and training_steps % \
+                        if tensorboard_params['steps'] > 0 and training_steps % \
                                 tensorboard_params['steps'] == 0:
 
                             if tensorboard_params['loss']:
-                                logs_writer.add_scalar(f'train_loss_{loss_model.__class__.__name__}',
+                                self.log_writer.add_scalar('train_loss',
                                                        running_loss / tensorboard_params['steps'],
                                                        global_step)
                             if tensorboard_params['lr']:
-                                logs_writer.add_scalar(f'lr_{loss_model.__class__.__name__}',
+                                self.log_writer.add_scalar(f'lr_{loss_model.__class__.__name__}',
                                                        scheduler.get_last_lr()[0],
                                                        global_step)
 
@@ -183,14 +182,14 @@ class TBSentenceTransformer(SentenceTransformer):
                                         name = '.'.join(
                                             [name_replace.get(el, el) for el in name.split(".") if el not in
                                              ['weight', 'bert', 'self', 'model', 'auto_model']])
-                                        logs_writer.add_histogram(f'{loss_model.__class__.__name__}.{name}.grad',
+                                        self.log_writer.add_histogram(f'{loss_model.__class__.__name__}.{name}.grad',
                                                                   param.grad.detach(), global_step)
 
                                         param_norm = param.grad.detach().data.norm(2)
                                         total_norm += param_norm.item() ** 2
                                 total_norm = total_norm ** 0.5
 
-                                logs_writer.add_scalar(f'global_norm_{loss_model.__class__.__name__}',
+                                self.log_writer.add_scalar(f'global_norm_{loss_model.__class__.__name__}',
                                                        total_norm,
                                                        global_step)
 
@@ -213,10 +212,19 @@ class TBSentenceTransformer(SentenceTransformer):
                 if checkpoint_path is not None and checkpoint_save_steps is not None and checkpoint_save_steps > 0 and global_step % checkpoint_save_steps == 0:
                     self._save_checkpoint(checkpoint_path, checkpoint_save_total_limit, global_step)
             self._eval_during_training(evaluator, output_path, save_best_model, epoch, -1, callback)
+        self.log_writer.flush()
+        self.log_writer.close()
         if evaluator is None and output_path is not None:   # No evaluator, but output path: save final model version
             self.save(output_path)
         if checkpoint_path is not None:
             self._save_checkpoint(checkpoint_path, checkpoint_save_total_limit, global_step)
+
+    @property
+    def max_seq_length(self):
+        """
+        Property to get the maximal input sequence length for the model. Longer inputs will be truncated.
+        """
+        return self._first_module().max_seq_length
 
     @max_seq_length.setter
     def max_seq_length(self, value):
@@ -224,3 +232,32 @@ class TBSentenceTransformer(SentenceTransformer):
         Property to set the maximal input sequence length for the model. Longer inputs will be truncated.
         """
         self._first_module().max_seq_length = value
+
+
+class TBSTFE(SentenceTransformersFinetuneEngine):
+    def __init__(
+        self,
+        dataset: EmbeddingQAFinetuneDataset,
+        model_id: str = "BAAI/bge-small-en",
+        model_output_path: str = "exp_finetune",
+        batch_size: int = 10,
+        val_dataset: Optional[EmbeddingQAFinetuneDataset] = None,
+        loss: Optional[Any] = None,
+        epochs: int = 2,
+        show_progress_bar: bool = True,
+        evaluation_steps: int = 50,
+        use_all_docs: bool = False,
+        writer_path: str = None
+    ) -> None:
+        super().__init__(dataset,
+                         model_id,
+                         model_output_path,
+                         batch_size,
+                         val_dataset,
+                         loss,
+                         epochs,
+                         show_progress_bar,
+                         evaluation_steps,
+                         use_all_docs)
+        self.model = TBSentenceTransformer(model_id, log_path=writer_path)
+        print('Writer path', writer_path)
