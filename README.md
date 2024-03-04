@@ -26,3 +26,27 @@ I have already submitted a <a href="https://github.com/run-llama/llama_index/pul
    ```
    pip install sentence-transformers
    ```
+
+## Usage:
+1. Get into the src directory
+    ```
+    cd src
+    ```
+2. Run the code below updating details for the input json file, model_output_path, model_id, epochs and the path where the logs should be stored (writer_path)
+    ```
+    from llama_index.core.evaluation import EmbeddingQAFinetuneDataset
+    from llama_index.finetuning import SentenceTransformersFinetuneEngine
+    from sftb import TBSTFE
+
+    train_dataset = EmbeddingQAFinetuneDataset.from_json(json_file)
+    finetuner = TBSTFE(
+      dataset=train_dataset,
+      model_id=model_id,
+      model_output_path=model_output_path,
+      epochs=epochs,
+      writer_path=w_path
+    )
+    finetuner.finetune()
+    finetuned_model = finetuner.get_finetuned_model()
+    finetuned_model.to_json()
+    ```
