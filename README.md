@@ -11,7 +11,10 @@ However, the finetune library calls <a href="https://www.sbert.net/">sentence-tr
 
 Hence, I got a little impatient and built this repo to track finetuning using Tensorboard
 
-#### Note: Some of the code in this repo is based on <a href="https://github.com/Mogady">Mogady's </a> <a href="https://github.com/UKPLab/sentence-transformers/pull/1532/files#diff-b85567d4fdaffe34a3ccd8fe6cd1fcb15a986ebd34af373c71f1f5cf5efff021">PR </a> for Sentence Transformers. Huge credits to him for this submission.
+#### Note1: 
+Some of the code in this repo is based on <a href="https://github.com/Mogady">Mogady's </a> <a href="https://github.com/UKPLab/sentence-transformers/pull/1532/files#diff-b85567d4fdaffe34a3ccd8fe6cd1fcb15a986ebd34af373c71f1f5cf5efff021">PR </a> for Sentence Transformers. Huge credits to him for this submission.
 
+#### Note2:
+I have already submitted a <a href="https://github.com/run-llama/llama_index/pull/11568">PR </a> to Llamaindex based on changes to the repo. However, this is a standalone repo with no changes to the main sentence-transformers/ llamaindex library. However, those packages do need to be installed.
 
 
