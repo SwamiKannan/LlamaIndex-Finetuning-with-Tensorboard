@@ -50,3 +50,8 @@ I have already submitted a <a href="https://github.com/run-llama/llama_index/pul
     finetuned_model = finetuner.get_finetuned_model()
     finetuned_model.to_json()
     ```
+
+## Outputs:
+<center>
+    <img src = "https://github.com/SwamiKannan/LlamaIndex-Finetuning-with-Tensorboard/blob/main/output/tensorboard.png">
+</center>
