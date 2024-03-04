@@ -17,4 +17,12 @@ Some of the code in this repo is based on <a href="https://github.com/Mogady">Mo
 #### Note2:
 I have already submitted a <a href="https://github.com/run-llama/llama_index/pull/11568">PR </a> to Llamaindex based on changes to the repo. However, this is a standalone repo with no changes to the main sentence-transformers/ llamaindex library. However, those packages do need to be installed.
 
-
+## Requirements:
+1. llama-index finetune library
+    ```
+    pip install llama-index-finetuning
+   ```
+2. sentence-transformers
+   ```
+   pip install sentence-transformers
+   ```
